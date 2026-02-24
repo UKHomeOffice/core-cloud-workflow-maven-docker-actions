@@ -243,7 +243,7 @@ This produces: ```target/dummy-service-0.0.1-SNAPSHOT.jar```
 
 Docker build and run:
 ```bash
-docker build -t dummy-service:local .
+docker build -t dummy-service:local -f tests/dummy-service/Dockerfile .
 docker run -d -p 8080:8080 --name dummy-test dummy-service:local
 ```
 

@@ -17,8 +17,8 @@ jobs:
     with:
       run_sonar: false
       working_directory: tests/dummy-service
-      docker_working_directory: tests/dummy-service
-      dockerfile: Dockerfile
+      docker_working_directory: .
+      dockerfile: tests/dummy-service/Dockerfile
       image_name: dummy-service
       image_tag: ${{ github.sha }}
       tag_latest: false

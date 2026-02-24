@@ -10,16 +10,15 @@ FROM maven:3.9-eclipse-temurin-21 AS builder
 WORKDIR /build
 
 # Copy POM first – better layer caching on dependency downloads
-COPY pom.xml .
-RUN mvn -B -ntp dependency:go-offline
+COPY tests/dummy-service/pom.xml ./pom.xml
+RUN mvn -B -ntp -f pom.xml dependency:go-offline
 
 # Copy source and build
-COPY src/ src/
-RUN mvn -B -ntp clean package -DskipTests && \
+COPY tests/dummy-service/src/ ./src/
+RUN mvn -B -ntp -f pom.xml clean package -DskipTests && \
     mv target/*.jar /build/app.jar
 
 # ── Stage 2: Runtime ───────────────────────────────────────────────────────────
-# Non-alpine runtime avoids platform manifest issues and is broadly multi-arch
 FROM eclipse-temurin:21-jre AS runtime
 
 # Non-root user and group (works on Debian/Ubuntu base)
