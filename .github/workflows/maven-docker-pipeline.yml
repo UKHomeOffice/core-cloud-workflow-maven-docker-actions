@@ -22,10 +22,10 @@ on:
         description: "Maven command to run for build/test"
         type: string
         default: "mvn -B -ntp clean test"
-      docker_context:
-        description: "Docker build context"
-        type: string
-        default: "."
+      # docker_context:
+      #   description: "Docker build context"
+      #   type: string
+      #   default: "."
       dockerfile:
         description: "Dockerfile path"
         type: string
@@ -181,7 +181,7 @@ jobs:
     # Pinned to commit SHA until CCL-6431-docker is merged (prevents workflow referencing actions@main).
     uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan.yml@3e3dc608bc09780ad6d680e977f384952964cd4f
     with:                                     # ← job-level uses, no runs-on, no steps
-      working_directory: ${{ inputs.docker_context }}
+      working_directory: ${{ inputs.docker_working_directory }}
       dockerfile: ${{ inputs.dockerfile }}
       image_name: ${{ inputs.image_name }}
       image_tag: ${{ inputs.image_tag }}
@@ -194,7 +194,7 @@ jobs:
     # Pinned to commit SHA until CCL-6431-docker is merged (prevents workflow referencing actions@main).
     uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan-push.yml@3e3dc608bc09780ad6d680e977f384952964cd4f
     with:                                     # ← job-level uses, no runs-on, no steps
-      working_directory: ${{ inputs.docker_context }}
+      working_directory: ${{ inputs.docker_working_directory }}
       dockerfile: ${{ inputs.dockerfile }}
       image_name: ${{ inputs.image_name }}
       image_tag: ${{ inputs.image_tag }}
