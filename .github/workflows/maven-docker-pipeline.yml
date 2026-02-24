@@ -1,0 +1,140 @@
+name: Maven Docker Pipeline (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: "Directory containing the Maven project to build"
+        type: string
+        default: "."
+      docker_working_directory:
+        type: string
+        default: "."
+      java_version:
+        description: "Java version for Maven build"
+        type: string
+        default: "21"
+      maven_command:
+        description: "Maven command to run for build/test"
+        type: string
+        default: "mvn -B -ntp clean test"
+      docker_context:
+        description: "Docker build context"
+        type: string
+        default: "."
+      dockerfile:
+        description: "Dockerfile path"
+        type: string
+        default: "Dockerfile"
+      image_name:
+        description: "Image name without registry prefix (e.g. dummy-service)"
+        type: string
+        required: true
+      image_tag:
+        description: "Image tag"
+        type: string
+        default: "${{ github.sha }}"
+      tag_latest:
+        description: "Also tag and push :latest (when publish=true)"
+        type: boolean
+        default: false
+      platforms:
+        description: "Docker platforms (buildx)"
+        type: string
+        default: "linux/amd64"
+      publish:
+        description: "When true, push image to ECR; when false, build/scan only"
+        type: boolean
+        default: false
+      run_sonar:
+        description: "Run SonarQube analysis (set false for self-test)"
+        type: boolean
+        default: true
+
+    secrets:
+      sonar_token:
+        required: true
+      sonar_host_url:
+        required: true
+      AWS_ECR_ACCOUNT_ID:
+        required: false
+      ROLE_TO_ASSUME:
+        required: false
+      AWS_REGION:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+  security-events: write
+
+jobs:
+
+  secret-detection:
+    name: Secret Detection (Gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0                     # ← full history required by Gitleaks
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          args: "--verbose --redact"
+
+  sast:
+    name: SAST / IaC Scans (Checkov + SonarQube)
+    needs: [secret-detection]
+    uses: ./.github/workflows/checkov-sonar-scan.yml
+    with:
+      run_sonar: ${{ inputs.run_sonar }}
+    secrets:                                 # ← full path, not ./ (nested workflow_call limitation)
+      sonar_token: ${{ secrets.sonar_token }}
+      sonar_host_url: ${{ secrets.sonar_host_url }}
+
+  maven-build:
+    name: Maven Build & Tests
+    needs: [sast]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Maven setup
+        uses: ./actions/maven-setup            # ← ./ is fine for composite actions
+        with:
+          java_version: ${{ inputs.java_version }}
+      - name: Maven build
+        uses: ./actions/maven-build
+        with:
+          command: ${{ inputs.maven_command }}
+
+  docker-build-scan:
+    name: Docker Build & Scan
+    needs: [maven-build]
+    # Pinned to commit SHA until CCL-6431-docker is merged (prevents workflow referencing actions@main).
+    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan.yml@3e3dc608bc09780ad6d680e977f384952964cd4f
+    with:                                     # ← job-level uses, no runs-on, no steps
+      working_directory: ${{ inputs.docker_context }}
+      dockerfile: ${{ inputs.dockerfile }}
+      image_name: ${{ inputs.image_name }}
+      image_tag: ${{ inputs.image_tag }}
+      tag_latest: ${{ inputs.tag_latest }}
+
+  docker-publish:
+    name: Docker Publish (ECR)
+    needs: [docker-build-scan]
+    if: ${{ inputs.publish }}
+    # Pinned to commit SHA until CCL-6431-docker is merged (prevents workflow referencing actions@main).
+    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan-push.yml@3e3dc608bc09780ad6d680e977f384952964cd4f
+    with:                                     # ← job-level uses, no runs-on, no steps
+      working_directory: ${{ inputs.docker_context }}
+      dockerfile: ${{ inputs.dockerfile }}
+      image_name: ${{ inputs.image_name }}
+      image_tag: ${{ inputs.image_tag }}
+      tag_latest: ${{ inputs.tag_latest }}
+    secrets:
+      AWS_ECR_ACCOUNT_ID: ${{ secrets.AWS_ECR_ACCOUNT_ID }}
+      ROLE_TO_ASSUME: ${{ secrets.ROLE_TO_ASSUME }}
