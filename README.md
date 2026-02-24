@@ -190,6 +190,9 @@ Using `@main` is acceptable for development but may include breaking changes bet
 
 ### Prerequisites
 
+> ⚠️ Note: The Dockerfile assumes the build context is the repository root.
+> Run the docker build command from the root of this repository.
+
 Docker running in your local environment — no local JDK or Maven installation
 required. Maven runs inside a container, which mirrors the GitHub Actions runner.
 
