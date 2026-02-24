@@ -14,6 +14,10 @@ on:
         description: "Java version for Maven build"
         type: string
         default: "21"
+      maven_args:
+        description: "Additional Maven arguments appended to lifecycle commands"
+        type: string
+        required: false
       maven_command:
         description: "Maven command to run for build/test"
         type: string
@@ -123,7 +127,53 @@ jobs:
       - name: Maven build
         uses: ./actions/maven-build
         with:
-          command: ${{ inputs.maven_command }}
+          working_directory: ${{ inputs.working_directory }}
+          maven_args: ${{ inputs.maven_args }}
+      
+      - name: Upload Surefire test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: |
+            ${{ inputs.working_directory }}/**/target/surefire-reports/*.xml
+            ${{ inputs.working_directory }}/**/target/surefire-reports/*.txt
+          if-no-files-found: warn
+
+      - name: Test summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "## 🧪 Unit Test Results (Surefire)" >> "$GITHUB_STEP_SUMMARY"
+
+          WORKDIR="${{ inputs.working_directory }}"
+          export WORKDIR
+
+          python3 -c '
+          import os, glob, xml.etree.ElementTree as ET
+          workdir = os.environ["WORKDIR"]
+          files = glob.glob(f"{workdir}/**/target/surefire-reports/TEST-*.xml", recursive=True)
+
+          if not files:
+            print("- No surefire XML reports found.")
+            raise SystemExit(0)
+
+          total = failures = errors = skipped = 0
+          for f in files:
+            root = ET.parse(f).getroot()
+            total += int(root.attrib.get("tests", 0))
+            failures += int(root.attrib.get("failures", 0))
+            errors += int(root.attrib.get("errors", 0))
+            skipped += int(root.attrib.get("skipped", 0))
+
+          passed = total - failures - errors - skipped
+          print(f"- Total: **{total}**")
+          print(f"- Passed: **{passed}**")
+          print(f"- Failures: **{failures}**")
+          print(f"- Errors: **{errors}**")
+          print(f"- Skipped: **{skipped}**")
+          ' >> "$GITHUB_STEP_SUMMARY"
 
   docker-build-scan:
     name: Docker Build & Scan

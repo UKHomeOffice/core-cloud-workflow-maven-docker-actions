@@ -1,13 +1,3 @@
-# ==============================================================================
-# Composite Action – maven-setup
-# Repo   : core-cloud-workflow-maven-docker-actions
-# ==============================================================================
-# Responsibilities:
-#   - Install the specified JDK
-#   - Restore the Maven dependency cache
-#   - Write a custom settings.xml if one is provided (base64-encoded secret)
-# ==============================================================================
-
 name: Maven Setup
 description: "Sets up JDK, restores Maven cache and optionally writes a custom settings.xml"
 
