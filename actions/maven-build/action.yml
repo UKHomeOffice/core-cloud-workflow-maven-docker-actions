@@ -1,0 +1,84 @@
+# ==============================================================================
+# Composite Action – maven-build
+# Repo   : core-cloud-workflow-maven-docker-actions
+# ==============================================================================
+# Responsibilities:
+#   - mvn validate   – verify POM structure and project setup
+#   - mvn compile    – compile application sources
+#   - mvn test       – run unit tests, publish Surefire XML results
+#   - mvn package    – produce the deployable JAR/WAR artifact
+#
+# Prerequisites:
+#   The maven-setup action must have run in the same job before this action.
+# ==============================================================================
+
+name: Maven Build
+description: "Runs the full Maven lifecycle: validate → compile → test → package"
+
+inputs:
+  working_directory:
+    description: "Path to the Maven project root"
+    required: false
+    default: "."
+  maven_args:
+    description: "Additional arguments appended to every mvn command"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Maven validate
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        mvn validate \
+          --batch-mode \
+          --no-transfer-progress \
+          ${{ inputs.maven_args }}
+
+    - name: Maven compile
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        mvn compile \
+          --batch-mode \
+          --no-transfer-progress \
+          ${{ inputs.maven_args }}
+
+    - name: Maven test
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        mvn test \
+          --batch-mode \
+          --no-transfer-progress \
+          ${{ inputs.maven_args }}
+
+    - name: Publish unit test results
+      if: always()
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      with:
+        files: "**/target/surefire-reports/*.xml"
+
+    - name: Maven package
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        mvn package \
+          --batch-mode \
+          --no-transfer-progress \
+          -DskipTests \
+          ${{ inputs.maven_args }}
+
+    - name: Confirm artifact produced
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      run: |
+        echo "## ☕ Maven Build Artifact" >> $GITHUB_STEP_SUMMARY
+        echo "| File | Size |" >> $GITHUB_STEP_SUMMARY
+        echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+        find target -maxdepth 1 -name "*.jar" -o -name "*.war" | while read f; do
+          size=$(du -sh "$f" | cut -f1)
+          echo "| \`$f\` | $size |" >> $GITHUB_STEP_SUMMARY
+        done

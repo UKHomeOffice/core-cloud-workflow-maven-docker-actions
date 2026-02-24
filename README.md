@@ -118,7 +118,7 @@ jobs:
     uses: UKHomeOffice/core-cloud-workflow-maven-docker-actions/.github/workflows/maven-docker-pipeline.yml@main
     with:
       image_name:        "my-service"
-      java_version:      "17"
+      java_version:      "21"
       publish:           ${{ github.ref == 'refs/heads/main' }}
     secrets:
       sonar_token:        ${{ secrets.SONAR_TOKEN }}
@@ -186,6 +186,78 @@ Using `@main` is acceptable for development but may include breaking changes bet
 
 ---
 
-*Confluence documentation: to be linked post-demo per Definition of Done*
-*Jira: CCL-6306*
+## Local Testing
 
+### Prerequisites
+
+Docker running in your local environment — no local JDK or Maven installation
+required. Maven runs inside a container, which mirrors the GitHub Actions runner.
+
+### Steps
+
+From the repo root:
+```bash
+cd tests/dummy-service
+```
+
+Run tests:
+```bash
+docker run --rm \
+  -v "$PWD":/workspace \
+  -w /workspace \
+  maven:3.9-eclipse-temurin-21 \
+  mvn -B -ntp clean test
+```
+you should see 3 test runs and BUILD SUCCESS:
+
+```bash
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  15.795 s
+[INFO] Finished at: 2026-02-23T23:27:21Z
+[INFO] ------------------------------------------------------------------------
+```
+
+Build package:
+```bash
+docker run --rm \
+  -v "$PWD":/workspace \
+  -w /workspace \
+  maven:3.9-eclipse-temurin-21 \
+  mvn -B -ntp clean package
+
+ls target/
+```
+This produces: ```target/dummy-service-0.0.1-SNAPSHOT.jar```
+
+```bash
+[INFO] 
+[INFO] --- jar:3.3.0:jar (default-jar) @ dummy-service ---
+[INFO] Building jar: /workspace/target/dummy-service-0.0.1-SNAPSHOT.jar
+```
+
+Docker build and run:
+```bash
+docker build -t dummy-service:local .
+docker run -d -p 8080:8080 --name dummy-test dummy-service:local
+```
+
+Verify the endpoints:
+```bash
+# Expected: {"status":"UP","service":"dummy-service","ticket":"CCL-6306","team":"core-cloud-platform"}
+curl -i http://localhost:8080/api/status
+
+# Expected: {"status":"UP"}
+curl -i http://localhost:8080/actuator/health
+```
+
+Cleanup:
+```bash
+# Stop and remove the test container
+docker rm -f dummy-test
+```
