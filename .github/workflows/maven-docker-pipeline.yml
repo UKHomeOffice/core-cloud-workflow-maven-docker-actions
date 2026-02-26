@@ -178,9 +178,8 @@ jobs:
   docker-build-scan:
     name: Docker Build & Scan
     needs: [maven-build]
-    # Pinned to @ccl-6431-docker until PR merges
-    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan.yml@ccl-6431-docker
-    with:                                     # ← job-level uses, no runs-on, no steps
+    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan.yml@main
+    with:
       working_directory: ${{ inputs.docker_working_directory }}
       dockerfile: ${{ inputs.dockerfile }}
       image_name: ${{ inputs.image_name }}
@@ -191,9 +190,8 @@ jobs:
     name: Docker Publish (ECR)
     needs: [docker-build-scan]
     if: ${{ inputs.publish }}
-    # Pinned to @ccl-6431-docker until PR merges
-    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan-push.yml@ccl-6431-docker
-    with:                                     # ← job-level uses, no runs-on, no steps
+    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan-push.yml@main
+    with:
       working_directory: ${{ inputs.docker_working_directory }}
       dockerfile: ${{ inputs.dockerfile }}
       image_name: ${{ inputs.image_name }}
