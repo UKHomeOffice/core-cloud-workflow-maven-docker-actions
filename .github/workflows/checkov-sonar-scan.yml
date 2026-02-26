@@ -1,0 +1,68 @@
+name: SAST Scans
+
+on:
+  workflow_call:
+    inputs:
+      run_sonar:
+        description: "Run SonarQube analysis"
+        type: boolean
+        default: true
+    secrets:
+      sonar_token:
+        required: false
+      sonar_host_url:
+        required: false
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+  security-events: write
+
+jobs:
+  checkov-scan:
+    name: Checkov Scan (SARIF filtered)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Checkov
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install checkov
+
+      - name: Run Checkov (generate SARIF)
+        run: |
+          checkov -d . \
+            --quiet \
+            --soft-fail \
+            --output sarif \
+            --output-file-path checkov-results.sarif
+
+      - name: Filter test fixtures out of SARIF
+        run: |
+          SARIF_FILE="checkov-results.sarif/results_sarif.sarif"
+          echo "Filtering SARIF file at: $SARIF_FILE"
+          python3 scripts/filter-sarif.py "$SARIF_FILE"
+
+      - name: Upload SARIF file (Source Code)
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: checkov-results.sarif/results_sarif.sarif
+          category: checkov-scan
+
+  sonarqube-scanner:
+    name: SonarQube Code Analysis
+    if: ${{inputs.run_sonar}}
+    uses: UKHomeOffice/core-cloud-workflow-sonarqube-scan/.github/workflows/sonarqube-scan.yaml@1.1.3
+    secrets:
+      sonar_token: ${{ secrets.sonar_token }}
+      sonar_host_url: ${{ secrets.sonar_host_url }}

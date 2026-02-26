@@ -1,0 +1,29 @@
+name: Self-test (dummy service)
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+  security-events: write
+
+jobs:
+  pipeline:
+    uses: ./.github/workflows/maven-docker-pipeline.yml
+    with:
+      run_sonar: false
+      working_directory: tests/dummy-service
+      docker_working_directory: .
+      dockerfile: tests/dummy-service/Dockerfile
+      image_name: dummy-service
+      image_tag: ${{ github.sha }}
+      tag_latest: false
+      publish: false
+    secrets:
+        sonar_token: ${{ secrets.SONAR_TOKEN }}
+        sonar_host_url: ${{ secrets.SONAR_HOST_URL }}
+      

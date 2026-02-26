@@ -1,0 +1,41 @@
+name: Maven Setup
+description: "Sets up JDK, restores Maven cache and optionally writes a custom settings.xml"
+
+inputs:
+  java_version:
+    description: "JDK version to install (e.g. 17, 21)"
+    required: false
+    default: "17"
+  java_distribution:
+    description: "JDK distribution: temurin | corretto | zulu"
+    required: false
+    default: "temurin"
+  maven_settings:
+    description: "Optional base64-encoded Maven settings.xml for private registries"
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK ${{ inputs.java_version }}
+      uses: actions/setup-java@v4
+      with:
+        java-version:  ${{ inputs.java_version }}
+        distribution:  ${{ inputs.java_distribution }}
+        cache:         maven
+
+    - name: Restore Maven dependency cache
+      uses: actions/cache@v4
+      with:
+        path:         ~/.m2/repository
+        key:          ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-maven-
+
+    - name: Write custom Maven settings.xml
+      if: ${{ inputs.maven_settings != '' }}
+      shell: bash
+      run: |
+        mkdir -p ~/.m2
+        echo "${{ inputs.maven_settings }}" | base64 -d > ~/.m2/settings.xml
+        echo "::notice::Custom Maven settings.xml written to ~/.m2/settings.xml"

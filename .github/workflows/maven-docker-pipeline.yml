@@ -1,0 +1,202 @@
+name: Maven Docker Pipeline (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: "Directory containing the Maven project to build"
+        type: string
+        default: "."
+      docker_working_directory:
+        type: string
+        default: "."
+      java_version:
+        description: "Java version for Maven build"
+        type: string
+        default: "21"
+      maven_args:
+        description: "Additional Maven arguments appended to lifecycle commands"
+        type: string
+        required: false
+      maven_command:
+        description: "Maven command to run for build/test"
+        type: string
+        default: "mvn -B -ntp clean test"
+      # docker_context:
+      #   description: "Docker build context"
+      #   type: string
+      #   default: "."
+      dockerfile:
+        description: "Dockerfile path"
+        type: string
+        default: "Dockerfile"
+      image_name:
+        description: "Image name without registry prefix (e.g. dummy-service)"
+        type: string
+        required: true
+      image_tag:
+        description: "Image tag"
+        type: string
+        default: "${{ github.sha }}"
+      tag_latest:
+        description: "Also tag and push :latest (when publish=true)"
+        type: boolean
+        default: false
+      platforms:
+        description: "Docker platforms (buildx)"
+        type: string
+        default: "linux/amd64"
+      publish:
+        description: "When true, push image to ECR; when false, build/scan only"
+        type: boolean
+        default: false
+      run_sonar:
+        description: "Run SonarQube analysis (set false for self-test)"
+        type: boolean
+        default: true
+
+    secrets:
+      sonar_token:
+        required: true
+      sonar_host_url:
+        required: true
+      AWS_ECR_ACCOUNT_ID:
+        required: false
+      ROLE_TO_ASSUME:
+        required: false
+      AWS_REGION:
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+  security-events: write
+
+jobs:
+
+  secret-detection:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          GITLEAKS_VERSION="8.18.4"
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          mkdir -p /tmp/gitleaks
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp/gitleaks
+          sudo mv /tmp/gitleaks/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Run Gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          gitleaks detect --redact --verbose --source . || {
+            echo "Gitleaks detected secrets. Please remove them or add an approved allowlist rule.";
+            exit 1;
+          }
+
+  sast:
+    name: SAST / IaC Scans (Checkov + SonarQube)
+    needs: [secret-detection]
+    uses: ./.github/workflows/checkov-sonar-scan.yml
+    with:
+      run_sonar: ${{ inputs.run_sonar }}
+    secrets:                                 # ← full path, not ./ (nested workflow_call limitation)
+      sonar_token: ${{ secrets.sonar_token }}
+      sonar_host_url: ${{ secrets.sonar_host_url }}
+
+  maven-build:
+    name: Maven Build & Tests
+    needs: [sast]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working_directory }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Maven setup
+        uses: ./actions/maven-setup            # ← ./ is fine for composite actions
+        with:
+          java_version: ${{ inputs.java_version }}
+      - name: Maven build
+        uses: ./actions/maven-build
+        with:
+          working_directory: ${{ inputs.working_directory }}
+          maven_args: ${{ inputs.maven_args }}
+      
+      - name: Upload Surefire test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: |
+            ${{ inputs.working_directory }}/**/target/surefire-reports/*.xml
+            ${{ inputs.working_directory }}/**/target/surefire-reports/*.txt
+          if-no-files-found: warn
+
+      - name: Test summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "## 🧪 Unit Test Results (Surefire)" >> "$GITHUB_STEP_SUMMARY"
+
+          WORKDIR="${{ inputs.working_directory }}"
+          export WORKDIR
+
+          python3 -c '
+          import os, glob, xml.etree.ElementTree as ET
+          workdir = os.environ["WORKDIR"]
+          files = glob.glob(f"{workdir}/**/target/surefire-reports/TEST-*.xml", recursive=True)
+
+          if not files:
+            print("- No surefire XML reports found.")
+            raise SystemExit(0)
+
+          total = failures = errors = skipped = 0
+          for f in files:
+            root = ET.parse(f).getroot()
+            total += int(root.attrib.get("tests", 0))
+            failures += int(root.attrib.get("failures", 0))
+            errors += int(root.attrib.get("errors", 0))
+            skipped += int(root.attrib.get("skipped", 0))
+
+          passed = total - failures - errors - skipped
+          print(f"- Total: **{total}**")
+          print(f"- Passed: **{passed}**")
+          print(f"- Failures: **{failures}**")
+          print(f"- Errors: **{errors}**")
+          print(f"- Skipped: **{skipped}**")
+          ' >> "$GITHUB_STEP_SUMMARY"
+
+  docker-build-scan:
+    name: Docker Build & Scan
+    needs: [maven-build]
+    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan.yml@main
+    with:
+      working_directory: ${{ inputs.docker_working_directory }}
+      dockerfile: ${{ inputs.dockerfile }}
+      image_name: ${{ inputs.image_name }}
+      image_tag: ${{ inputs.image_tag }}
+      tag_latest: ${{ inputs.tag_latest }}
+
+  docker-publish:
+    name: Docker Publish (ECR)
+    needs: [docker-build-scan]
+    if: ${{ inputs.publish }}
+    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan-push.yml@main
+    with:
+      working_directory: ${{ inputs.docker_working_directory }}
+      dockerfile: ${{ inputs.dockerfile }}
+      image_name: ${{ inputs.image_name }}
+      image_tag: ${{ inputs.image_tag }}
+      tag_latest: ${{ inputs.tag_latest }}
+    secrets:
+      AWS_ECR_ACCOUNT_ID: ${{ secrets.AWS_ECR_ACCOUNT_ID }}
+      ROLE_TO_ASSUME: ${{ secrets.ROLE_TO_ASSUME }}
