@@ -53,7 +53,7 @@ jobs:
           SARIF_FILE="checkov-results.sarif/results_sarif.sarif"
           echo "Filtering SARIF file at: $SARIF_FILE"
 
-          cat > /tmp/filter-sarif.py <<'PYEOF'
+              cat > /tmp/filter-sarif.py <<'PYEOF'
           import json, sys
           from pathlib import Path
 
@@ -84,29 +84,29 @@ jobs:
               total = removed = 0
 
               for run in runs:
-            results = run.get("results", [])
-            total += len(results)
-            kept = []
+                  results = run.get("results", [])
+                  total += len(results)
+                  kept = []
 
-            for r in results:
-                if any(
-                    should_exclude(
-                        l.get("physicalLocation", {})
-                         .get("artifactLocation", {})
-                         .get("uri", "")
-                    )
-                    for l in r.get("locations", [])
-                ):
-                    removed += 1
-                else:
-                    kept.append(r)
+                  for r in results:
+                      if any(
+                          should_exclude(
+                              l.get("physicalLocation", {})
+                                .get("artifactLocation", {})
+                                .get("uri", "")
+                          )
+                          for l in r.get("locations", [])
+                      ):
+                          removed += 1
+                      else:
+                          kept.append(r)
 
-            run["results"] = kept
+                  run["results"] = kept
 
-          print(f"SARIF filter: {total} findings -> {total - removed} kept, {removed} removed")
+              print(f"SARIF filter: {total} findings -> {total - removed} kept, {removed} removed")
 
-          with path.open("w", encoding="utf-8") as f:
-            json.dump(sarif, f, indent=2)
+              with path.open("w", encoding="utf-8") as f:
+                  json.dump(sarif, f, indent=2)
 
               print(f"Filtered SARIF written to: {path}")
               return 0
