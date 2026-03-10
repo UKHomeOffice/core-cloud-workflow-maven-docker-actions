@@ -49,10 +49,73 @@ jobs:
 
       - name: Filter test fixtures out of SARIF
         run: |
+          set -euo pipefail
           SARIF_FILE="checkov-results.sarif/results_sarif.sarif"
           echo "Filtering SARIF file at: $SARIF_FILE"
-          python3 scripts/filter-sarif.py "$SARIF_FILE"
 
+              cat > /tmp/filter-sarif.py <<'PYEOF'
+          import json, sys
+          from pathlib import Path
+
+          EXCLUDED = ["tests/", "test/", "target/", "node_modules/", ".mvn/", ".github/"]
+
+          def should_exclude(uri):
+              n = uri.replace("file://", "").lstrip("/")
+              return any(n.startswith(p) for p in EXCLUDED)
+
+          def main():
+              if len(sys.argv) != 2:
+                  print(f"Usage: {sys.argv[0]} <sarif-file>", file=sys.stderr)
+                  return 2
+
+              path = Path(sys.argv[1])
+              if not path.exists():
+                  print(f"ERROR: not found: {path}", file=sys.stderr)
+                  return 1
+
+              with path.open("r", encoding="utf-8") as f:
+                  sarif = json.load(f)
+
+              runs = sarif.get("runs", [])
+              if not runs:
+                  print("No runs found in SARIF; nothing to filter.")
+                  return 0
+
+              total = removed = 0
+
+              for run in runs:
+                  results = run.get("results", [])
+                  total += len(results)
+                  kept = []
+
+                  for r in results:
+                      if any(
+                          should_exclude(
+                              l.get("physicalLocation", {})
+                                .get("artifactLocation", {})
+                                .get("uri", "")
+                          )
+                          for l in r.get("locations", [])
+                      ):
+                          removed += 1
+                      else:
+                          kept.append(r)
+
+                  run["results"] = kept
+
+              print(f"SARIF filter: {total} findings -> {total - removed} kept, {removed} removed")
+
+              with path.open("w", encoding="utf-8") as f:
+                  json.dump(sarif, f, indent=2)
+
+              print(f"Filtered SARIF written to: {path}")
+              return 0
+
+          raise SystemExit(main())
+          PYEOF
+
+              python3 /tmp/filter-sarif.py "$SARIF_FILE"
+          
       - name: Upload SARIF file (Source Code)
         uses: github/codeql-action/upload-sarif@v4
         with:
