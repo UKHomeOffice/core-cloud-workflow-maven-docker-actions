@@ -108,13 +108,13 @@ jobs:
           with path.open("w", encoding="utf-8") as f:
             json.dump(sarif, f, indent=2)
 
-          print(f"Filtered SARIF written to: {path}")
-          return 0
+              print(f"Filtered SARIF written to: {path}")
+              return 0
 
           raise SystemExit(main())
           PYEOF
 
-          python3 /tmp/filter-sarif.py "$SARIF_FILE"
+              python3 /tmp/filter-sarif.py "$SARIF_FILE"
           
       - name: Upload SARIF file (Source Code)
         uses: github/codeql-action/upload-sarif@v4
