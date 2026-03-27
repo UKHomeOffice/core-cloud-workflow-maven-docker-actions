@@ -10,7 +10,7 @@ This repo provides a composable `workflow_call` pipeline that any consumer repo 
 
 ### Architecture Overview
 
-[Reusable Maven Docker Pipeline](docs/images/maven-docker-pipeline.png)
+![Maven Docker Pipeline](docs/images/maven-docker-pipeline.png)
 
 
 ```
@@ -269,3 +269,5 @@ Cleanup:
 # Stop and remove the test container
 docker rm -f dummy-test
 ```
+
+[def]: docs/images/maven-docker-pipeline.png
