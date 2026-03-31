@@ -106,7 +106,7 @@ jobs:
     needs: [secret-detection]
     uses: ./.github/workflows/checkov-sonar-scan.yml
     with:
-      run_sonar: ${{ inputs.run_sonar }}
+      run_sonar: true
     secrets:                                 # ← full path, not ./ (nested workflow_call limitation)
       sonar_token: ${{ secrets.sonar_token }}
       sonar_host_url: ${{ secrets.sonar_host_url }}
