@@ -15,7 +15,7 @@ jobs:
   pipeline:
     uses: ./.github/workflows/maven-docker-pipeline.yml
     with:
-      run_sonar: false
+      run_sonar: true
       working_directory: tests/dummy-service
       docker_working_directory: .
       dockerfile: tests/dummy-service/Dockerfile
