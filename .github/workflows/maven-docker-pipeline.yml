@@ -113,12 +113,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Maven setup
-        uses: ./actions/maven-setup
+        uses: UKHomeOffice/core-cloud-workflow-maven-docker-actions/actions/maven-setup@fix/CCL-6306-rearange-sonar-job-replace-inline-script
         with:
           java_version: ${{ inputs.java_version }}
 
       - name: Maven build
-        uses: ./actions/maven-build
+        uses: UKHomeOffice/core-cloud-workflow-maven-docker-actions/actions/maven-build@fix/CCL-6306-rearange-sonar-job-replace-inline-script
         with:
           working_directory: ${{ inputs.working_directory }}
           maven_args: ${{ inputs.maven_args }}
