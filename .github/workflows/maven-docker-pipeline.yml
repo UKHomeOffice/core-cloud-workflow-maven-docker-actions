@@ -131,7 +131,28 @@ jobs:
           path: |
             ${{ inputs.working_directory }}/**/target/surefire-reports/*.xml
             ${{ inputs.working_directory }}/**/target/surefire-reports/*.txt
+          retention-days: 7
           if-no-files-found: warn
+
+      - name: SonarQube analysis
+        if: inputs.run_sonar && env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        working-directory: ${{ inputs.working_directory }}
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.sonar_token }}
+          SONAR_HOST_URL: ${{ secrets.sonar_host_url }}
+        run: |
+          set -euo pipefail
+          mvn -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+            -Dsonar.projectKey=${{ github.event.repository.name }} \
+            -Dsonar.projectName=${{ github.event.repository.name }} \
+            -Dsonar.host.url=${{ secrets.sonar_host_url }} \
+            -Dsonar.token=${{ secrets.sonar_token }} \
+            -Dsonar.java.binaries=target/classes \
+            -Dsonar.java.test.binaries=target/test-classes \
+            -Dsonar.junit.reportPaths=target/surefire-reports \
+            -Dsonar.qualitygate.wait=false \
+            ${{ inputs.maven_args }}
 
       - name: Test summary
         if: always()
@@ -168,19 +189,9 @@ jobs:
           print(f"- Skipped: **{skipped}**")
           ' >> "$GITHUB_STEP_SUMMARY"
 
-  sonarqube-scanner:
-    name: SonarQube Code Analysis
-    needs: [maven-build]
-    if: ${{ inputs.run_sonar }}
-    uses: UKHomeOffice/core-cloud-workflow-sonarqube-scan/.github/workflows/sonarqube-scan.yaml@1.1.7
-    secrets:
-      sonar_token: ${{ secrets.sonar_token }}
-      sonar_host_url: ${{ secrets.sonar_host_url }}
-
   docker-build-scan:
     name: Docker Build & Scan
-    needs: [maven-build, sonarqube-scanner]
-    if: ${{ always() && needs.maven-build.result == 'success' && (needs.sonarqube-scanner.result == 'success' || needs.sonarqube-scanner.result == 'skipped') }}
+    needs: [maven-build]
     uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan.yml@1.2.0
     with:
       working_directory: ${{ inputs.docker_working_directory }}
