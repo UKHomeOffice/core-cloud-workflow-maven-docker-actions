@@ -111,6 +111,12 @@ jobs:
 
       - name: Upload SARIF file (Source Code)
         uses: github/codeql-action/upload-sarif@v4
+        continue-on-error: true # In case SARIF upload fails (e.g., if Code Scanning is not enabled for the consumer repo)
         with:
           sarif_file: checkov-results.sarif/results_sarif.sarif
           category: checkov-scan
+      
+      - name: Note if SARIF upload is unavailable
+        if: always()
+        run: |
+          echo "SARIF upload attempted. If this repository does not have GitHub Code Security enabled, upload may be skipped."
