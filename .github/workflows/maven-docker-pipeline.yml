@@ -124,7 +124,7 @@ jobs:
           maven_args: ${{ inputs.maven_args }}
 
       - name: Upload Surefire test reports
-        if: always()
+        if: always() && !contains(inputs.maven_args, '-DskipTests')
         uses: actions/upload-artifact@v4
         with:
           name: surefire-reports
@@ -143,15 +143,20 @@ jobs:
           SONAR_HOST_URL: ${{ secrets.sonar_host_url }}
         run: |
           set -euo pipefail
-          mvn -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
+
+          EXTRA_ARGS=""
+          if [[ "${{ inputs.maven_args }}" != *"-DskipTests"* ]]; then
+            EXTRA_ARGS="$EXTRA_ARGS -Dsonar.junit.reportPaths=target/surefire-reports"
+          fi
+          mvn -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:5.5.0.6356:sonar \
             -Dsonar.projectKey=${{ github.event.repository.name }} \
             -Dsonar.projectName=${{ github.event.repository.name }} \
             -Dsonar.host.url=${{ secrets.sonar_host_url }} \
             -Dsonar.token=${{ secrets.sonar_token }} \
             -Dsonar.java.binaries=target/classes \
             -Dsonar.java.test.binaries=target/test-classes \
-            -Dsonar.junit.reportPaths=target/surefire-reports \
             -Dsonar.qualitygate.wait=false \
+            $EXTRA_ARGS \
             ${{ inputs.maven_args }}
 
       - name: Test summary
