@@ -1,122 +1,14 @@
-name: Checkov Scan
+name: Checkov Reusable Scan
 
 on:
   workflow_call:
-  
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 permissions:
   contents: read
+  id-token: write
   actions: read
   security-events: write
 
 jobs:
   checkov-scan:
-    name: Checkov Scan (SARIF filtered)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-      security-events: write
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Checkov
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install checkov
-
-      - name: Run Checkov (generate SARIF)
-        run: |
-          checkov -d . \
-            --quiet \
-            --soft-fail \
-            --output sarif \
-            --output-file-path checkov-results.sarif
-
-      - name: Verify SARIF output
-        run: |
-          echo "Checkov output directory:"
-          ls -R checkov-results.sarif || true
-
-      - name: Filter test fixtures out of SARIF
-        run: |
-          set -euo pipefail
-          SARIF_FILE="checkov-results.sarif/results_sarif.sarif"
-          echo "Filtering SARIF file at: $SARIF_FILE"
-          export SARIF_FILE
-
-          python3 -c '
-          import json
-          import os
-          import sys
-          from pathlib import Path
-
-          excluded = ["tests/", "test/", "target/", "node_modules/", ".mvn/", ".github/"]
-
-          def should_exclude(uri: str) -> bool:
-              normalized = uri.replace("file://", "").lstrip("/")
-              return any(normalized.startswith(prefix) for prefix in excluded)
-
-          sarif_path = Path(os.environ["SARIF_FILE"])
-          if not sarif_path.exists():
-              print(f"ERROR: not found: {sarif_path}", file=sys.stderr)
-              raise SystemExit(1)
-
-          with sarif_path.open("r", encoding="utf-8") as f:
-              sarif = json.load(f)
-
-          runs = sarif.get("runs", [])
-          if not runs:
-              print("No runs found in SARIF; nothing to filter.")
-              raise SystemExit(0)
-
-          total = 0
-          removed = 0
-
-          for run in runs:
-              results = run.get("results", [])
-              total += len(results)
-              kept = []
-
-              for result in results:
-                  locations = result.get("locations", [])
-                  exclude = any(
-                      should_exclude(
-                          loc.get("physicalLocation", {})
-                             .get("artifactLocation", {})
-                             .get("uri", "")
-                      )
-                      for loc in locations
-                  )
-
-                  if exclude:
-                      removed += 1
-                  else:
-                      kept.append(result)
-
-              run["results"] = kept
-
-          with sarif_path.open("w", encoding="utf-8") as f:
-              json.dump(sarif, f, indent=2)
-
-          print(f"SARIF filter: {total} findings -> {total - removed} kept, {removed} removed")
-          print(f"Filtered SARIF written to: {sarif_path}")
-          '
-
-      - name: Upload SARIF file (Source Code)
-        uses: github/codeql-action/upload-sarif@v4
-        continue-on-error: true # In case SARIF upload fails (e.g., if Code Scanning is not enabled for the consumer repo)
-        with:
-          sarif_file: checkov-results.sarif/results_sarif.sarif
-          category: checkov-scan
-      
-      - name: Note if SARIF upload is unavailable
-        if: always()
-        run: |
-          echo "SARIF upload attempted. If this repository does not have GitHub Code Security enabled, upload may be skipped."
+    uses: Home-Office-Digital/core-cloud-workflow-checkov-sast-scan/.github/workflows/checkov-scan-base.yaml@1.14.1
