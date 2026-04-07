@@ -1,0 +1,14 @@
+name: Checkov Reusable Scan
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+  security-events: write
+
+jobs:
+  checkov-scan:
+    uses: Home-Office-Digital/core-cloud-workflow-checkov-sast-scan/.github/workflows/checkov-scan-base.yaml@1.14.1

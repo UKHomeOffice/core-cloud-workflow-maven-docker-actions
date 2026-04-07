@@ -7,64 +7,60 @@ on:
         description: "Directory containing the Maven project to build"
         type: string
         default: "."
+
       docker_working_directory:
+        description: "Directory to use as Docker build context"
         type: string
         default: "."
+
       java_version:
         description: "Java version for Maven build"
         type: string
         default: "21"
+
       maven_args:
         description: "Additional Maven arguments appended to lifecycle commands"
         type: string
         required: false
-      maven_command:
-        description: "Maven command to run for build/test"
-        type: string
-        default: "mvn -B -ntp clean test"
-      # docker_context:
-      #   description: "Docker build context"
-      #   type: string
-      #   default: "."
+
       dockerfile:
         description: "Dockerfile path"
         type: string
         default: "Dockerfile"
+
       image_name:
         description: "Image name without registry prefix (e.g. dummy-service)"
         type: string
         required: true
+
       image_tag:
         description: "Image tag"
         type: string
         default: "${{ github.sha }}"
+
       tag_latest:
         description: "Also tag and push :latest (when publish=true)"
         type: boolean
         default: false
-      platforms:
-        description: "Docker platforms (buildx)"
-        type: string
-        default: "linux/amd64"
+
       publish:
         description: "When true, push image to ECR; when false, build/scan only"
         type: boolean
         default: false
+
       run_sonar:
-        description: "Run SonarQube analysis (set false for self-test)"
+        description: "Run SonarQube analysis after Maven build"
         type: boolean
         default: true
 
     secrets:
       sonar_token:
-        required: true
+        required: false
       sonar_host_url:
-        required: true
+        required: false
       AWS_ECR_ACCOUNT_ID:
         required: false
       ROLE_TO_ASSUME:
-        required: false
-      AWS_REGION:
         required: false
 
 permissions:
@@ -74,7 +70,6 @@ permissions:
   security-events: write
 
 jobs:
-
   secret-detection:
     name: Secret Detection
     runs-on: ubuntu-latest
@@ -97,48 +92,72 @@ jobs:
         run: |
           set -euo pipefail
           gitleaks detect --redact --verbose --source . || {
-            echo "Gitleaks detected secrets. Please remove them or add an approved allowlist rule.";
-            exit 1;
+            echo "Gitleaks detected secrets. Please remove them or add an approved allowlist rule."
+            exit 1
           }
 
-  sast:
-    name: SAST / IaC Scans (Checkov + SonarQube)
+  checkov-scan:
+    name: Checkov Scan
     needs: [secret-detection]
-    uses: ./.github/workflows/checkov-sonar-scan.yml
-    with:
-      run_sonar: ${{ inputs.run_sonar }}
-    secrets:                                 # ← full path, not ./ (nested workflow_call limitation)
-      sonar_token: ${{ secrets.sonar_token }}
-      sonar_host_url: ${{ secrets.sonar_host_url }}
+    uses: ./.github/workflows/checkov-scan.yml
 
   maven-build:
     name: Maven Build & Tests
-    needs: [sast]
+    needs: [checkov-scan]
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ${{ inputs.working_directory }}
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Maven setup
-        uses: ./actions/maven-setup            # ← ./ is fine for composite actions
+        uses: UKHomeOffice/core-cloud-workflow-maven-docker-actions/actions/maven-setup@main
         with:
           java_version: ${{ inputs.java_version }}
+
       - name: Maven build
-        uses: ./actions/maven-build
+        uses: UKHomeOffice/core-cloud-workflow-maven-docker-actions/actions/maven-build@main
         with:
           working_directory: ${{ inputs.working_directory }}
           maven_args: ${{ inputs.maven_args }}
-      
+
       - name: Upload Surefire test reports
-        if: always()
+        if: always() && !contains(inputs.maven_args, '-DskipTests')
         uses: actions/upload-artifact@v4
         with:
           name: surefire-reports
           path: |
             ${{ inputs.working_directory }}/**/target/surefire-reports/*.xml
             ${{ inputs.working_directory }}/**/target/surefire-reports/*.txt
+          retention-days: 7
           if-no-files-found: warn
+
+      - name: SonarQube analysis
+        if: inputs.run_sonar && env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != ''
+        working-directory: ${{ inputs.working_directory }}
+        shell: bash
+        env:
+          SONAR_TOKEN: ${{ secrets.sonar_token }}
+          SONAR_HOST_URL: ${{ secrets.sonar_host_url }}
+        run: |
+          set -euo pipefail
+
+          EXTRA_ARGS=""
+          if [[ "${{ inputs.maven_args }}" != *"-DskipTests"* ]]; then
+            EXTRA_ARGS="$EXTRA_ARGS -Dsonar.junit.reportPaths=target/surefire-reports"
+          fi
+          mvn -B -ntp org.sonarsource.scanner.maven:sonar-maven-plugin:5.5.0.6356:sonar \
+            -Dsonar.projectKey=${{ github.event.repository.name }} \
+            -Dsonar.projectName=${{ github.event.repository.name }} \
+            -Dsonar.host.url=${{ secrets.sonar_host_url }} \
+            -Dsonar.token=${{ secrets.sonar_token }} \
+            -Dsonar.java.binaries=target/classes \
+            -Dsonar.java.test.binaries=target/test-classes \
+            -Dsonar.qualitygate.wait=false \
+            $EXTRA_ARGS \
+            ${{ inputs.maven_args }}
 
       - name: Test summary
         if: always()
@@ -156,16 +175,16 @@ jobs:
           files = glob.glob(f"{workdir}/**/target/surefire-reports/TEST-*.xml", recursive=True)
 
           if not files:
-            print("- No surefire XML reports found.")
-            raise SystemExit(0)
+              print("- No surefire XML reports found.")
+              raise SystemExit(0)
 
           total = failures = errors = skipped = 0
           for f in files:
-            root = ET.parse(f).getroot()
-            total += int(root.attrib.get("tests", 0))
-            failures += int(root.attrib.get("failures", 0))
-            errors += int(root.attrib.get("errors", 0))
-            skipped += int(root.attrib.get("skipped", 0))
+              root = ET.parse(f).getroot()
+              total += int(root.attrib.get("tests", 0))
+              failures += int(root.attrib.get("failures", 0))
+              errors += int(root.attrib.get("errors", 0))
+              skipped += int(root.attrib.get("skipped", 0))
 
           passed = total - failures - errors - skipped
           print(f"- Total: **{total}**")
@@ -178,7 +197,7 @@ jobs:
   docker-build-scan:
     name: Docker Build & Scan
     needs: [maven-build]
-    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan.yml@main
+    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan.yml@1.2.0
     with:
       working_directory: ${{ inputs.docker_working_directory }}
       dockerfile: ${{ inputs.dockerfile }}
@@ -190,7 +209,7 @@ jobs:
     name: Docker Publish (ECR)
     needs: [docker-build-scan]
     if: ${{ inputs.publish }}
-    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan-push.yml@main
+    uses: UKHomeOffice/core-cloud-workflow-docker-actions/.github/workflows/build-scan-push.yml@1.2.0
     with:
       working_directory: ${{ inputs.docker_working_directory }}
       dockerfile: ${{ inputs.dockerfile }}

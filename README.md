@@ -1,7 +1,5 @@
 # core-cloud-workflow-maven-docker-actions
 
-> **Jira:** CCL-6306 | **Team:** Core Cloud Platform – Sauron | **Owner:** corecloud@homeoffice.gov.uk
-
 Reusable GitHub Actions pipeline for building, scanning and publishing Maven-based Docker workloads across all Core Cloud Product teams and tenants.
 
 ---
@@ -10,11 +8,16 @@ Reusable GitHub Actions pipeline for building, scanning and publishing Maven-bas
 
 This repo provides a composable `workflow_call` pipeline that any consumer repo can reference with a single `uses:` declaration. It eliminates pipeline duplication across the platform and ensures consistent security scanning on every build.
 
+### Architecture Overview
+
+![Maven Docker Pipeline](docs/images/maven-docker-pipeline.png)
+
+
 ```
 Consumer Repo
     └── calls ──► .github/workflows/maven-docker-pipeline.yml   (this repo)
                         │
-                        ├── .github/workflows/checkov-sonar-scan.yml  (this repo)
+                        ├── .github/workflows/checkov-scan.yml  (this repo)
                         │       ├── Checkov → GitHub Advanced Security
                         │       └── SonarQube → core-cloud-workflow-sonarqube-scan
                         │
@@ -33,20 +36,22 @@ Consumer Repo
 ## Pipeline Stages
 
 ```
-┌───────────────────────────────────────────────────────────────────────┐
-│                    maven-docker-pipeline.yml                          │
-├──────────────────┬────────────┬──────────────┬───────────────────────┤
-│  1. Secret       │  2. SAST   │  3. Maven    │  4. Docker       5.   │
-│     Detection    │            │     Build    │     Build &    Publish │
-│                  │            │              │     Scan       (ECR)   │
-│  Gitleaks        │  Checkov   │  validate    │  docker-setup          │
-│  (full history)  │  SonarQube │  compile     │  docker-build          │
-│                  │            │  test        │  docker-scan           │
-│                  │            │  package     │  (Trivy)       push    │
-└──────────────────┴────────────┴──────────────┴───────────────────────┘
-                                                            ▲
-                                                only when publish: true
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    maven-docker-pipeline.yml                               │
+├──────────────────┬──────────────┬──────────────┬──────────────┬────────────┤
+│ 1. Secret        │ 2. Checkov   │ 3. Maven     │ 4. SonarQube │ 5. Docker  │
+│    Detection     │    Scan      │    Build     │   (optional) │ Build/Scan │
+│                  │              │              │              │   & Push   │
+│  Gitleaks        │  IaC scan    │ validate     │ code         │ docker-setup│
+│  (full history)  │  → SARIF     │ compile      │ analysis     │ docker-build│
+│                  │  → filtered  │ test         │ (post-build) │ docker-scan │
+│                  │  → upload    │ package      │              │ (Trivy)     │
+│                  │              │              │              │ push (ECR)  │
+└──────────────────┴──────────────┴──────────────┴──────────────┴────────────┘
+                                                                  ▲
+                                                    only when publish: true
 ```
+
 
 | # | Job | Description |
 |---|---|---|
@@ -264,3 +269,5 @@ Cleanup:
 # Stop and remove the test container
 docker rm -f dummy-test
 ```
+
+[def]: docs/images/maven-docker-pipeline.png
